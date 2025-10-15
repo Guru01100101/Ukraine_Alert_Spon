@@ -2,7 +2,6 @@ import os
 import json
 import asyncio
 import aiohttp
-import uuid
 from datetime import datetime
 from typing import Dict, Optional, Set
 from dotenv import load_dotenv
@@ -35,6 +34,13 @@ class AlertMonitor:
     """
     
     def __init__(self):
+        # Перевірка токену при ініціалізації
+        if not ALERT_TOKEN or ALERT_TOKEN == "your_token_here":
+            print("❌ КРИТИЧНА ПОМИЛКА: Токен ALERT_TOKEN не налаштований у .env файлі!")
+            print(f"   Поточне значення: {ALERT_TOKEN}")
+            raise ValueError("ALERT_TOKEN must be set in .env file")
+
+        print(f"✅ Токен завантажено: {ALERT_TOKEN[:10]}...{ALERT_TOKEN[-5:]}")
         self.alert_headers = {"Authorization": ALERT_TOKEN}
         self.state = self._load_state()
         self.session: Optional[aiohttp.ClientSession] = None
@@ -161,6 +167,7 @@ class AlertMonitor:
                 # Детальна обробка HTTP помилок згідно з документацією API
                 if response.status == 401:
                     print(f"❌ Помилка авторизації (401): перевірте токен ALERT_TOKEN у .env файлі")
+                    print(self.alert_headers)
                     return None
                 elif response.status == 429:
                     print(f"⚠️  Перевищено ліміт запитів (429): зачекайте перед наступним запитом")
@@ -194,8 +201,11 @@ class AlertMonitor:
             print(f"❌ Несподівана помилка при перевірці статусу: {e}")
             return None
     
-    async def get_region_status(self, region_id: int) -> Optional[Dict]:
-        """Отримує статус тривоги для конкретного регіону."""
+    async def get_region_status(self, region_id: int, retry_count: int = 0) -> Optional[Dict]:
+        """Отримує статус тривоги для конкретного регіону з автоматичним повторенням при помилках."""
+        max_retries = 3
+        retry_delay = 30  # секунд
+
         try:
             session = await self._get_session()
             url = f"{ALERT_API_URL}/alerts/{region_id}"
@@ -203,16 +213,32 @@ class AlertMonitor:
             async with session.get(url, headers=self.alert_headers) as response:
                 # Детальна обробка HTTP помилок
                 if response.status == 401:
-                    print(f"❌ Помилка авторизації (401): перевірте токен ALERT_TOKEN")
-                    return None
+                    if retry_count < max_retries:
+                        print(f"⚠️  Регіон {region_id}: помилка авторизації (401), можливо перевищено ліміт запитів")
+                        print(f"   Повторна спроба {retry_count + 1}/{max_retries} через {retry_delay} секунд...")
+                        await asyncio.sleep(retry_delay)
+                        return await self.get_region_status(region_id, retry_count + 1)
+                    else:
+                        print(f"❌ Регіон {region_id}: не вдалося отримати дані після {max_retries} спроб")
+                        return None
+
                 elif response.status == 429:
-                    print(f"⚠️  Перевищено ліміт запитів (429): зачекайте перед наступним запитом")
-                    return None
+                    if retry_count < max_retries:
+                        print(f"⚠️  Регіон {region_id}: перевищено ліміт запитів (429)")
+                        print(f"   Повторна спроба {retry_count + 1}/{max_retries} через {retry_delay} секунд...")
+                        await asyncio.sleep(retry_delay)
+                        return await self.get_region_status(region_id, retry_count + 1)
+                    else:
+                        print(f"❌ Регіон {region_id}: перевищено ліміт запитів після {max_retries} спроб")
+                        return None
+
                 elif response.status == 404:
                     print(f"⚠️  Регіон {region_id} не знайдено (404)")
                     return None
+
                 elif response.status != 200:
-                    print(f"❌ HTTP помилка {response.status} для регіону {region_id}")
+                    response_text = await response.text()
+                    print(f"❌ HTTP помилка {response.status} для регіону {region_id}: {response_text}")
                     return None
 
                 response.raise_for_status()
@@ -240,17 +266,32 @@ class AlertMonitor:
                 if not region_id_from_api:
                     print(f"⚠️  Відсутнє поле regionId у відповіді для регіону {region_id}")
 
+                has_alert = bool(region_data.get("activeAlerts"))
+                region_name = region_data.get("regionName", "Невідомо")
+
+                # Вивід поточного статусу після перевірки
+                status_icon = "🚨" if has_alert else "✅"
+                status_text = "ТРИВОГА" if has_alert else "Спокійно"
+                print(f"{status_icon} {region_name}: {status_text}")
+
                 return {
                     "region_id": region_id,
-                    "region_name": region_data.get("regionName", "Невідомо"),
-                    "has_alert": bool(region_data.get("activeAlerts")),
+                    "region_name": region_name,
+                    "has_alert": has_alert,
                     "last_update": region_data.get("lastUpdate"),
                     "active_alerts": region_data.get("activeAlerts", [])
                 }
 
         except aiohttp.ClientError as e:
-            print(f"❌ Помилка мережі при перевірці регіону {region_id}: {e}")
-            return None
+            if retry_count < max_retries:
+                print(f"⚠️  Помилка мережі при перевірці регіону {region_id}: {e}")
+                print(f"   Повторна спроба {retry_count + 1}/{max_retries} через {retry_delay} секунд...")
+                await asyncio.sleep(retry_delay)
+                return await self.get_region_status(region_id, retry_count + 1)
+            else:
+                print(f"❌ Помилка мережі для регіону {region_id} після {max_retries} спроб: {e}")
+                return None
+
         except json.JSONDecodeError as e:
             print(f"❌ Помилка парсингу JSON для регіону {region_id}: {e}")
             return None
@@ -282,7 +323,7 @@ class AlertMonitor:
             print(f"❌ Неможливо створити задачу - файл {audio_file} недоступний.")
             return None
             
-        task_id = str(uuid.uuid4())
+        # ВАЖЛИВО: Не передаємо taskId - сервер генерує його сам
         task_data = {
             "taskname": task_name,
             "isdisable": "0",
@@ -294,20 +335,27 @@ class AlertMonitor:
         }
         
         create_result = await self._spon_request("/php/addtaskinfo.php", task_data)
-        if not (create_result and create_result.get("res") == 1):
+        if not (create_result and create_result.get("res") == '1'):
             print(f"❌ Не вдалося створити задачу: {create_result}")
             return None
-            
-        run_payload = {"taskCommand": "runtaskinfo", "taskId": task_id}
+
+        # ВИПРАВЛЕННЯ: Використовуємо taskId, який повернув сервер, а не наш згенерований
+        server_task_id = create_result.get("taskId")
+        if not server_task_id:
+            print(f"❌ Сервер не повернув taskId: {create_result}")
+            return None
+
+        run_payload = {"taskCommand": "runtaskinfo", "taskId": server_task_id}
         run_result = await self._spon_request("/php/exetaskcmd.php", run_payload)
         
-        if run_result and run_result.get("res") == 1:
+        if run_result and (run_result.get("res") == '1' or run_result.get("res") == 1):
             task_type = "🚨 ТРИВОГА" if audio_file == FILE_ON else "✅ ВІДБІЙ"
-            print(f"✅ Задача '{task_type}' [{region_name}] створена та запущена (ID: {task_id[:8]}...)")
-            return task_id
+            print(f"✅ Задача '{task_type}' [{region_name}] створена та запущена (ID: {server_task_id[:8]}...)")
+            return server_task_id
         else:
-            print(f"⚠️  Задача створена, але не запущена: {run_result}")
-            return task_id
+            print(f"⚠️  Задача створена (ID: {server_task_id[:8]}...), але не запущена: {run_result}")
+            # Все одно повертаємо ID для подальшого видалення
+            return server_task_id
 
     async def delete_task(self, task_id: str, region_name: str = "") -> bool:
         """Видаляє задачу з системи XC-9000."""
@@ -344,13 +392,27 @@ class AlertMonitor:
     
     async def check_all_regions(self):
         """Перевіряє статус всіх регіонів та обробляє зміни."""
-        tasks = [self.get_region_status(region_id) for region_id in REGION_IDS]
-        results = await asyncio.gather(*tasks)
+        print(f"\n🔍 Перевірка статусу регіонів ({datetime.now():%H:%M:%S}):")
+        print("─" * 50)
+
+        # ВАЖЛИВО: Робимо запити ПОСЛІДОВНО з затримкою, щоб не перевищити rate limit API
+        results = []
+        request_delay = 2  # секунди між запитами
+
+        for i, region_id in enumerate(REGION_IDS):
+            # Додаємо затримку між запитами (крім першого)
+            if i > 0:
+                await asyncio.sleep(request_delay)
+
+            result = await self.get_region_status(region_id)
+            if result:
+                results.append(result)
+
+        print("─" * 50)
+
         changes_detected = False
-        
+
         for result in results:
-            if not result: continue
-            
             region_id_str = str(result["region_id"])
             old_status = self.state["regions"].get(region_id_str, {}).get("alert_status", False)
             
@@ -359,18 +421,23 @@ class AlertMonitor:
                 status_icon = "🚨" if result["has_alert"] else "✅"
                 status_text = "ТРИВОГА" if result["has_alert"] else "ВІДБІЙ"
                 
-                print(f"\n{status_icon} [{datetime.now():%Y-%m-%d %H:%M:%S}] {result['region_name']}")
+                print(f"\n🔔 ЗМІНА СТАТУСУ:")
+                print(f"{status_icon} [{datetime.now():%Y-%m-%d %H:%M:%S}] {result['region_name']}")
                 print(f"   Статус: {status_text} (був: {'ТРИВОГА' if old_status else 'ВІДБІЙ'})")
                 print(f"   Оновлено: {result['last_update']}")
                 
                 await self.handle_region_alert(result)
         
+        if not changes_detected and not self.state["first_run"]:
+            print("ℹ️  Змін не виявлено")
+
         return changes_detected
     
     async def initialize(self):
         """Ініціалізація монітора: перевірка файлів."""
         print("🚀 Запуск моніторингу повітряних тривог...")
         print(f"📍 Відстежувані регіони: {REGION_IDS}")
+        print(f"ℹ️  Запити до API виконуються послідовно з затримкою для уникнення rate limiting")
         print("🔍 Перевірка наявності аудіофайлів на сервері...")
         for filename in [FILE_ON, FILE_OFF]:
             await self.ensure_file_on_server(filename)
