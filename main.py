@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 import asyncio
@@ -6,8 +7,18 @@ from datetime import datetime
 from typing import Dict, Optional, Set
 from dotenv import load_dotenv
 from pathlib import Path
+from logging.handlers import RotatingFileHandler
 
-load_dotenv()
+
+# Завантаження змінних оточення з .env файлу
+base_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(base_dir, '.env')
+if os.path.exists(env_path):
+    load_dotenv(dotenv_path=env_path)
+else:
+    logging.warning("⚠️ .env файл не знайдено, використовуються значення за замовчуванням.")
+    # print("⚠️ .env файл не знайдено, використовуються значення за замовчуванням.")
+    print("Щоб створити .env файл, скопіюйте .env.example і налаштуйте змінні.")
 
 ALERT_TOKEN = os.getenv("ALERT_TOKEN")
 REGION_IDS = json.loads(os.getenv("REGION_ID", "[23]"))
@@ -22,10 +33,53 @@ ALERT_API_URL = "https://api.ukrainealarm.com/api/v3"
 SPON_BASE_URL = f"http://{SPON_IP}"
 STATE_FILE = Path("alert_state.json")
 
+# --- Налаштування логування ---
+# LOG_FILE = "alert_monitor.log"
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s [%(levelname)s] %(message)s",
+#     datefmt="%d.%m.%Y %H:%M:%S",
+#     handlers=[
+#         logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8'),
+#         logging.StreamHandler()
+#     ]
+# )
+
+LOG_FILE_INFO = "alert_info.log"
+LOG_FILE_ERROR = "alert_error.log"
+
+# Налаштування логування для INFO+ рівня
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+info_handler = RotatingFileHandler(LOG_FILE_INFO, maxBytes=5*1024*1024, backupCount=2, encoding='utf-8')
+info_handler.setLevel(logging.INFO)
+info_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%d.%m.%Y %H:%M:%S")
+info_handler.setFormatter(info_formatter)
+
+# Налаштування логування для ERROR+ рівня
+error_handler = logging.FileHandler(LOG_FILE_ERROR, encoding='utf-8')
+error_handler.setLevel(logging.ERROR)
+error_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%d.%m.%Y %H:%M:%S")
+error_handler.setFormatter(error_formatter)
+
+# Консольний хендлер для INFO і вище рівнів
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(info_formatter)
+
+logger.addHandler(info_handler)
+logger.addHandler(error_handler)
+logger.addHandler(console_handler)
+# -----------------------------
+
+
 class AlertMonitor:
     def __init__(self):
         if not ALERT_TOKEN or ALERT_TOKEN == "your_token_here":
+            logging.critical("❌ ALERT_TOKEN не встановлено в .env файлі")
             raise ValueError("ALERT_TOKEN must be set in .env file")
+
         self.alert_headers = {"Authorization": ALERT_TOKEN}
         self.state = self._load_state()
         self.session: Optional[aiohttp.ClientSession] = None
