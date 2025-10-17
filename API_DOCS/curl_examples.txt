@@ -1,0 +1,111 @@
+Створення таски на сервері:
+
+curl -X POST "http://10.123.0.228/php/addtaskinfo.php" \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "jsondata[taskname]=TEST_AMPLIFIER" \
+     -d "jsondata[isdisable]=1" \
+     -d "jsondata[level]=0" \
+     -d "jsondata[creator]=admin" \
+     -d "jsondata[triggers]=" \
+     -d "jsondata[commands]=3*0*0*0*Перевірка.mp3*1<11*0*0" \
+     -d "jsondata[dirname]="
+
+{"res":"1","taskId":"163c49f0-543e-4a63-8aa1-559a2abf9210","error":""}%
+
+Запуск таски на сервері:
+
+curl -X POST "http://10.123.0.228/php/exetaskcmd.php" \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "jsondata[taskCommand]=deltaskinfo&jsondata[taskId]=03253cfc-d113-476b-a79c-12e804e4d104";
+
+{"res":"1","taskId":"7dcc718b-59f2-4585-9b12-d9e83db8451a","number":"9990003","error":""}%
+
+Видалення таски на сервері:
+
+curl -X POST "http://<XC9000_IP>/php/exetaskcmd.php" \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "jsondata[taskCommand]=deltaskinfo&jsondata[taskId]=03253cfc-d113-476b-a79c-12e804e4d104"
+
+{"res":"1"}%
+
+Отримання списку всіх активних пристроїв:
+
+           ❯ curl -X POST "http://10.123.0.228/php/getzoneterminaldata.php" \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "jsondata[pageIndex]=0" \
+     -d "jsondata[pageCount]=100" \
+     -d "jsondata[groupName]=*" \
+     -d "jsondata[showType]=1" \
+     -d "jsondata[user]=admin" \
+     -d "jsondata[simple]=1" | jq .
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  1508  100  1380  100   128  13832   1282 --:--:-- --:--:-- --:--:-- 15080
+{
+  "res": "1",
+  "rows": [
+    {
+      "name": "Термінал 1ДПРЧ тест",
+      "id": "1",
+      "ip": "10.123.0.5",
+      "state": "0",
+      "talkinv": "9",
+      "talkoutv": "9",
+      "talkringv": "9",
+      "bcinv": "9",
+      "bcoutv": "4",
+      "bcringv": "9",
+      "meetinv": "9",
+      "meetoutv": "9",
+      "meetringv": "9",
+      "volume": "9,9,9,4,9,9,9,9,9",
+      "localip": "10.123.0.5:5060",
+      "task": "0",
+      "dante_id": "",
+      "dante_ip": "",
+      "bind_dante_id": "",
+      "rtspurl": "",
+      "panels": "",
+      "deviceinfo": "vendortype:0~devicetype:XC-9037~version:1.0.0_20240924~localip:10.123.0.5~gateway:10.123.0.1~mask:255.255.255.0~sendport:5060~recvport:5060~mac:F4.15.35.0D.56.DA",
+      "devtype": "999",
+      "devname": "sessionstate_state_other",
+      "nvrurl": "",
+      "version": "1.0.0_20240924",
+      "lastip": "-",
+      "panelchildren": [],
+      "subchildren": []
+    },
+    {
+      "name": "Підсилювач 1ДПРЧ тест",
+      "id": "11",
+      "ip": "10.123.0.1",
+      "state": "0",
+      "talkinv": "9",
+      "talkoutv": "9",
+      "talkringv": "8",
+      "bcinv": "9",
+      "bcoutv": "4",
+      "bcringv": "8",
+      "meetinv": "8",
+      "meetoutv": "8",
+      "meetringv": "8",
+      "volume": "9,9,9,4,8,8,8,8,8",
+      "localip": "10.123.59.20:5060",
+      "task": "0",
+      "dante_id": "",
+      "dante_ip": "",
+      "bind_dante_id": "",
+      "rtspurl": "",
+      "panels": "",
+      "deviceinfo": "vendortype:0~devicetype:XC-9508~version:V1.5.1_20241121[Std_EN]~localip:10.123.59.20~gateway:10.123.59.1~mask:255.255.255.0~sendport:5060~redvport:5060~mac:f4.15.35.0d.4f.a6",
+      "devtype": "10",
+      "devname": "RackMountedCctTerminal",
+      "nvrurl": "",
+      "version": "",
+      "lastip": "-",
+      "panelchildren": [],
+      "subchildren": []
+    }
+  ],
+  "total": "2"
+}

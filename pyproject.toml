@@ -1,0 +1,10 @@
+[project]
+name = "ukraine-alert-spon"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiohttp>=3.13.0",
+    "dotenv>=0.9.9",
+]
